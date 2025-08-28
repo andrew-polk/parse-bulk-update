@@ -24,6 +24,19 @@ async function updateUploader(oldUploaderId: string, newUploaderId: string) {
 
   const newUploader = new Parse.User();
   newUploader.id = newUploaderId;
+  
+  // Fetch user details to get email addresses
+  await oldUploader.fetch({ useMasterKey: true });
+  await newUploader.fetch({ useMasterKey: true });
+  
+  const oldUserEmail = oldUploader.get('email') || oldUploader.get('username');
+  const newUserEmail = newUploader.get('email') || newUploader.get('username');
+
+  if (!oldUserEmail || !newUserEmail) {
+    throw new Error('Could not retrieve email addresses for both users');
+  }
+
+  console.log(`Updating from: ${oldUserEmail} to: ${newUserEmail}`);
 
   const query = new Parse.Query(Book);
   query.equalTo('uploader', oldUploader);
@@ -33,6 +46,40 @@ async function updateUploader(oldUploaderId: string, newUploaderId: string) {
   await query.each(async (book: Parse.Object) => {
     book.set('uploader', newUploader);
     book.set('updateSource', 'bulkUpdateScript');
+    
+    // Update baseUrl field if it contains the old user's email (URL-encoded)
+    const baseUrl = book.get('baseUrl');
+    if (baseUrl && typeof baseUrl === 'string') {
+      const oldUserEmailEncoded = encodeURIComponent(oldUserEmail);
+      const newUserEmailEncoded = encodeURIComponent(newUserEmail);
+      
+      if (baseUrl.includes(oldUserEmailEncoded)) {
+        const updatedBaseUrl = baseUrl.replace(oldUserEmailEncoded, newUserEmailEncoded);
+        
+        // Validation: compare URL structures with emails replaced by placeholder
+        const placeholder = '~^PLACEHOLDER^~';
+        const originalWithPlaceholder = baseUrl.replace(oldUserEmailEncoded, placeholder);
+        const updatedWithPlaceholder = updatedBaseUrl.replace(newUserEmailEncoded, placeholder);
+        
+        if (originalWithPlaceholder !== updatedWithPlaceholder) {
+          console.error(`❌ Validation failed: URL structure changed beyond email replacement`);
+          console.error(`Original: ${baseUrl}`);
+          console.error(`Updated: ${updatedBaseUrl}`);
+          console.error(`Original with placeholder: ${originalWithPlaceholder}`);
+          console.error(`Updated with placeholder: ${updatedWithPlaceholder}`);
+          throw new Error('baseUrl validation failed - unexpected structural changes detected');
+        }
+        
+        book.set('baseUrl', updatedBaseUrl);
+        console.log(`✅ Updated baseUrl:\nold:\t${baseUrl}\nnew:\t${updatedBaseUrl}`);
+      } else if (baseUrl.includes(oldUserEmail)) {
+        // Unexpected case: email is not URL-encoded in the baseUrl
+        console.error(`❌ Unexpected case: found non-encoded email in baseUrl: ${baseUrl}`);
+        throw new Error('baseUrl contains non-encoded email - this case is not supported');
+      } else {
+        console.log(`⚠️ baseUrl does not contain old user's email:\n\t${baseUrl}`);
+      }
+    }
     
     // This portion has not been tested as is. I forgot about the need
     // for this until after I had already changed the uploader.

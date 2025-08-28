@@ -4,8 +4,8 @@
   "description": "Bulk update utility for Parse Server",
   "main": "main.ts",
   "scripts": {
-    "start": "ts-node main.ts",
-    "build": "tsc main.ts"
+    "start": "ts-node src/scripts/bulk-update.ts",
+    "build": "tsc src/scripts/bulk-update.ts"
   },
   "dependencies": {
     "dotenv": "^17.2.0",
